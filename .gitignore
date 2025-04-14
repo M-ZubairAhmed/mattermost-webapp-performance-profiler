@@ -55,3 +55,7 @@ temp/
 
 # Debug files
 debug/
+
+# Results
+results/*
+!results/README.md

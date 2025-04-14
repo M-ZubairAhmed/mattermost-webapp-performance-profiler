@@ -1,5 +1,14 @@
 import puppeteer, {Browser, Page} from 'puppeteer';
-import {measureMemoryUsage} from './measure';
+import {
+  measureMemoryUsage, 
+  profileSwitchingToEachChannel, 
+  profileSwitchingToSameChannels,
+  startTrackingGC,
+  forceGarbageCollection
+} from './measure';
+import * as path from 'path';
+import * as fs from 'fs/promises';
+import 'pptr-testing-library/extend';
 
 async function setupBrowser(): Promise<{browser: Browser; page: Page}> {
   const browser = await puppeteer.launch({
@@ -55,14 +64,14 @@ async function main(): Promise<void> {
     // Clear browser data
     await clearBrowserData(page);
 
+    // Start tracking garbage collection events
+    await startTrackingGC(page);
+    console.log('Garbage collection tracking enabled');
+
     // Navigate to the page
     await page.goto(
       'http://localhost:8065/team-au5hif5xh3gctgbfasrhq8dt1o/channels/town-square',
     );
-
-    // Measure memory before actions
-    console.log('\nMemory before actions:');
-    await measureMemoryUsage(page);
 
     // Handle preference checkbox
     await handlePreferenceCheckbox(page);
@@ -70,20 +79,68 @@ async function main(): Promise<void> {
     // Click View in Browser button
     await clickViewInBrowser(page);
 
-    // Measure memory after navigation
-    console.log('\nMemory after navigation:');
-    await measureMemoryUsage(page);
-
     // Perform login
     await performLogin(page);
 
-    // Measure memory after login
-    console.log('\nMemory after login:');
-    await measureMemoryUsage(page);
+    // Wait for page to stabilize after login and load sidebar
+    console.log('Waiting for page to stabilize after login...');
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    
+    // Force garbage collection before starting analysis
+    console.log('Running initial garbage collection to clean memory state...');
+    await forceGarbageCollection(page);
+    
+    // Wait a moment for GC to complete fully
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    console.log('Initial garbage collection completed. Starting analysis...');
 
-    // Keep the browser open
-    // To close the browser, uncomment the following line:
-    // await browser.close();
+    // Create results directory if it doesn't exist
+    const resultsDir = path.join(process.cwd(), 'results');
+    try {
+      await fs.mkdir(resultsDir, { recursive: true });
+    } catch (err) {
+      console.log('Results directory already exists');
+    }
+
+    // Create timestamp for filenames
+    const timestamp = new Date().toISOString().replace(/:/g, '-');
+
+    
+    // Measure memory usage for each channel without GC
+    // console.log('\nStarting channel memory profiling...');
+    // await profileSwitchingToEachChannel(
+    //   page, 
+    //   path.join(resultsDir, `each-channel-memory-profile-no-gc-${timestamp}.json`),
+    //   false
+    // );
+    
+    // Measure memory usage when switching between same channels without GC
+    await profileSwitchingToSameChannels(
+      page, 
+      path.join(resultsDir, `same-channels-memory-profile-no-gc-${timestamp}.json`),
+      false,
+      100
+    );
+    
+    
+    // Measure memory usage for each channel with GC
+    // await profileSwitchingToEachChannel(
+    //   page, 
+    //   path.join(resultsDir, `each-channel-memory-profile-with-gc-${timestamp}.json`),
+    //   true
+    // );
+    
+    // Measure memory usage when switching between same channels with GC
+    // await profileSwitchingToSameChannels(
+    //   page, 
+    //   path.join(resultsDir, `same-channels-memory-profile-with-gc-${timestamp}.json`),
+    //   true
+    // );
+    
+    console.log('\nAll tests completed.');
+    
+    // Close the browser
+    await browser.close();
   } catch (error) {
     console.error('An error occurred:', error);
   }

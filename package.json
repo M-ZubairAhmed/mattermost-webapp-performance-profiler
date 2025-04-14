@@ -13,6 +13,7 @@
   "author": "m-zubairahmed",
   "license": "MIT",
   "dependencies": {
+    "pptr-testing-library": "^0.8.0",
     "puppeteer": "^24.6.1"
   },
   "devDependencies": {
