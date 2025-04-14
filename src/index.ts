@@ -1,10 +1,10 @@
 import puppeteer, {Browser, Page} from 'puppeteer';
 import {
-  measureMemoryUsage, 
-  profileSwitchingToEachChannel, 
+  measureMemoryUsage,
+  profileSwitchingToEachChannel,
   profileSwitchingToSameChannels,
-  startTrackingGC,
-  forceGarbageCollection
+  profileScrollingInChannel,
+  forceGarbageCollection,
 } from './measure';
 import * as path from 'path';
 import * as fs from 'fs/promises';
@@ -64,10 +64,6 @@ async function main(): Promise<void> {
     // Clear browser data
     await clearBrowserData(page);
 
-    // Start tracking garbage collection events
-    await startTrackingGC(page);
-    console.log('Garbage collection tracking enabled');
-
     // Navigate to the page
     await page.goto(
       'http://localhost:8065/team-au5hif5xh3gctgbfasrhq8dt1o/channels/town-square',
@@ -84,20 +80,20 @@ async function main(): Promise<void> {
 
     // Wait for page to stabilize after login and load sidebar
     console.log('Waiting for page to stabilize after login...');
-    await new Promise(resolve => setTimeout(resolve, 5000));
-    
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+
     // Force garbage collection before starting analysis
     console.log('Running initial garbage collection to clean memory state...');
     await forceGarbageCollection(page);
-    
+
     // Wait a moment for GC to complete fully
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    await new Promise((resolve) => setTimeout(resolve, 2000));
     console.log('Initial garbage collection completed. Starting analysis...');
 
     // Create results directory if it doesn't exist
     const resultsDir = path.join(process.cwd(), 'results');
     try {
-      await fs.mkdir(resultsDir, { recursive: true });
+      await fs.mkdir(resultsDir, {recursive: true});
     } catch (err) {
       console.log('Results directory already exists');
     }
@@ -105,40 +101,46 @@ async function main(): Promise<void> {
     // Create timestamp for filenames
     const timestamp = new Date().toISOString().replace(/:/g, '-');
 
-    
-    // Measure memory usage for each channel without GC
-    // console.log('\nStarting channel memory profiling...');
+    // Choose which test to run (uncomment one at a time)
+
+    // Test 1: Run scrolling test
+    await profileScrollingInChannel(
+      page,
+      'sidebarItem_off-topic', // Channel ID
+      200, // Scroll n times
+      400, // n px per scroll
+      1500, // n seconds between scrolls (to ensure smooth scrolling completes)
+      path.join(resultsDir, `scroll-memory-profile-no-gc-${timestamp}.json`),
+    );
+
+    // Test 2: Run scrolling test with garbage collection
+    // await profileScrollingInChannel(
+    //   page,
+    //   'sidebarItem_town-square',  // Channel ID
+    //   30,                         // Scroll 30 times
+    //   500,                        // 500px per scroll
+    //   1000,                       // 1 second between scrolls
+    //   path.join(resultsDir, `scroll-memory-profile-with-gc-${timestamp}.json`),
+    //   true                        // Run GC during test
+    // );
+
+    // Test 3: Measure memory usage when switching between same channels without GC
+    // await profileSwitchingToSameChannels(
+    //   page,
+    //   path.join(resultsDir, `same-channels-memory-profile-no-gc-${timestamp}.json`),
+    //   false,
+    //   100
+    // );
+
+    // Test 4: Measure memory usage for each channel without GC
     // await profileSwitchingToEachChannel(
-    //   page, 
+    //   page,
     //   path.join(resultsDir, `each-channel-memory-profile-no-gc-${timestamp}.json`),
     //   false
     // );
-    
-    // Measure memory usage when switching between same channels without GC
-    await profileSwitchingToSameChannels(
-      page, 
-      path.join(resultsDir, `same-channels-memory-profile-no-gc-${timestamp}.json`),
-      false,
-      100
-    );
-    
-    
-    // Measure memory usage for each channel with GC
-    // await profileSwitchingToEachChannel(
-    //   page, 
-    //   path.join(resultsDir, `each-channel-memory-profile-with-gc-${timestamp}.json`),
-    //   true
-    // );
-    
-    // Measure memory usage when switching between same channels with GC
-    // await profileSwitchingToSameChannels(
-    //   page, 
-    //   path.join(resultsDir, `same-channels-memory-profile-with-gc-${timestamp}.json`),
-    //   true
-    // );
-    
+
     console.log('\nAll tests completed.');
-    
+
     // Close the browser
     await browser.close();
   } catch (error) {
