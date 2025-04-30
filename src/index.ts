@@ -6,9 +6,11 @@ import {
   profileScrollingInChannel,
   forceGarbageCollection,
 } from './measure';
+import {FrameRateMeasurer} from './frameRate';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import 'pptr-testing-library/extend';
+import {formatTimestamp} from './toFile';
 
 async function setupBrowser(): Promise<{browser: Browser; page: Page}> {
   const browser = await puppeteer.launch({
@@ -99,18 +101,21 @@ async function main(): Promise<void> {
     }
 
     // Create timestamp for filenames
-    const timestamp = new Date().toISOString().replace(/:/g, '-');
+    const timestamp = formatTimestamp();
 
     // Choose which test to run (uncomment one at a time)
+
+    const frameRateMeasurer = new FrameRateMeasurer(page);
+    await frameRateMeasurer.start();
 
     // Test 1: Run scrolling test
     await profileScrollingInChannel(
       page,
-      'sidebarItem_off-topic', // Channel ID
-      200, // Scroll n times
+      'sidebarItem_town-square', // Channel ID
+      20, // Scroll n times
       400, // n px per scroll
-      1500, // n seconds between scrolls (to ensure smooth scrolling completes)
-      path.join(resultsDir, `scroll-memory-profile-no-gc-${timestamp}.json`),
+      500, // n seconds between scrolls (to ensure smooth scrolling completes)
+      `scroll-memory-profile-no-gc-${timestamp}`,
     );
 
     // Test 2: Run scrolling test with garbage collection
@@ -138,6 +143,8 @@ async function main(): Promise<void> {
     //   path.join(resultsDir, `each-channel-memory-profile-no-gc-${timestamp}.json`),
     //   false
     // );
+
+    await frameRateMeasurer.stop();
 
     console.log('\nAll tests completed.');
 

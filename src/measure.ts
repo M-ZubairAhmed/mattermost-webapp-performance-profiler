@@ -1,6 +1,5 @@
 import {Page} from 'puppeteer';
-import * as fs from 'fs/promises';
-import * as path from 'path';
+import {createAndSaveToFiles} from './toFile';
 
 interface MemoryMetrics {
   heapTotalMB: number;
@@ -14,6 +13,8 @@ interface MemoryMetrics {
 // Add this interface extension for scroll measurements
 interface ScrollMemoryMetrics extends MemoryMetrics {
   scrollPosition: number; // Scroll position in pixels
+  frameRate?: number; // Frames per second (frame rate)
+  frameTime?: number; // Average time to render a frame in ms
 }
 
 /**
@@ -94,68 +95,11 @@ export function convertTimestampsToSeconds(
   }));
 }
 
-export async function exportToCsv(
-  measurements: MemoryMetrics[],
-  outputFile: string,
-): Promise<void> {
-  // Convert timestamps to include seconds for better readability
-  const measurementsWithSeconds = convertTimestampsToSeconds(measurements);
-
-  // Map of original headers to headers with units
-  const headerMap: Record<string, string> = {
-    heapTotalMB: 'heapTotal_MB',
-    timestamp: 'timestamp_ms',
-    diffTimestamp: 'diffTimestamp_ms',
-    timestamp_sec: 'timestamp_sec',
-    diffTimestamp_sec: 'diffTimestamp_sec',
-  };
-
-  // Determine all possible headers from the data
-  const headers = new Set<string>();
-  measurementsWithSeconds.forEach((metric) => {
-    Object.keys(metric).forEach((key) => headers.add(key));
-  });
-
-  // Create header row with units
-  const headerRow = Array.from(headers)
-    .map((h) => headerMap[h] || h)
-    .join(',');
-
-  // Create data rows
-  const dataRows = measurementsWithSeconds.map((metric) => {
-    return Array.from(headers)
-      .map((header) => {
-        // Handle case where a metric doesn't have all fields
-        const value = metric[header];
-        // Wrap string values in quotes
-        return typeof value === 'string'
-          ? `"${value}"`
-          : value === undefined
-            ? ''
-            : value;
-      })
-      .join(',');
-  });
-
-  // Combine header and data rows
-  const csvContent = [headerRow, ...dataRows].join('\n');
-
-  // Write to file
-  await fs.writeFile(outputFile, csvContent);
-  console.log(`CSV data saved to ${outputFile}`);
-}
-
-// Helper function to create CSV file path from JSON file path
-function getCsvFilePath(jsonFilePath: string): string {
-  const parsedPath = path.parse(jsonFilePath);
-  return path.join(parsedPath.dir, `${parsedPath.name}.csv`);
-}
-
 export async function monitorMemoryUsage(
   page: Page,
   duration: number,
   interval: number,
-  outputFile?: string,
+  filename: string,
   runGC: boolean = false,
 ): Promise<MemoryMetrics[]> {
   const measurements: MemoryMetrics[] = [];
@@ -178,26 +122,17 @@ export async function monitorMemoryUsage(
     await new Promise((resolve) => setTimeout(resolve, interval));
   }
 
-  // Save to file if specified
-  if (outputFile) {
-    // Convert timestamps to include seconds
-    const dataWithSeconds = convertTimestampsToSeconds(measurements);
+  // Convert timestamps to include seconds
+  const dataWithSeconds = convertTimestampsToSeconds(measurements);
 
-    // Save JSON
-    await fs.writeFile(outputFile, JSON.stringify(dataWithSeconds, null, 2));
-    console.log(`JSON data saved to ${outputFile}`);
-
-    // Save CSV
-    const csvFile = getCsvFilePath(outputFile);
-    await exportToCsv(measurements, csvFile);
-  }
+  await createAndSaveToFiles(dataWithSeconds, filename);
 
   return measurements;
 }
 
 export async function profileSwitchingToEachChannel(
   page: Page,
-  outputFile?: string,
+  filename: string,
   runGC: boolean = false,
 ): Promise<MemoryMetrics[]> {
   const measurements: MemoryMetrics[] = [];
@@ -263,27 +198,17 @@ export async function profileSwitchingToEachChannel(
     measurements.push(metricsWithChannel);
   }
 
-  // Save to file if specified
-  if (outputFile) {
-    // Convert timestamps to include seconds
-    const dataWithSeconds = convertTimestampsToSeconds(measurements);
+  // Convert timestamps to include seconds
+  const dataWithSeconds = convertTimestampsToSeconds(measurements);
 
-    // Save JSON
-    await fs.writeFile(outputFile, JSON.stringify(dataWithSeconds, null, 2));
-    console.log(`JSON data saved to ${outputFile}`);
-
-    // Save CSV
-    const csvFile = getCsvFilePath(outputFile);
-    await exportToCsv(measurements, csvFile);
-  }
+  await createAndSaveToFiles(dataWithSeconds, filename);
 
   return measurements;
 }
 
 export async function profileSwitchingToSameChannels(
   page: Page,
-  outputFile?: string,
-  runGC: boolean = false,
+  filename: string,
   numberOfSwitches: number = 10,
 ): Promise<MemoryMetrics[]> {
   const measurements: MemoryMetrics[] = [];
@@ -373,19 +298,10 @@ export async function profileSwitchingToSameChannels(
     `Completed ${numberOfSwitches} channel switches (${measurements.length} measurements)`,
   );
 
-  // Save to file if specified
-  if (outputFile) {
-    // Convert timestamps to include seconds
-    const dataWithSeconds = convertTimestampsToSeconds(measurements);
+  // Convert timestamps to include seconds
+  const dataWithSeconds = convertTimestampsToSeconds(measurements);
 
-    // Save JSON
-    await fs.writeFile(outputFile, JSON.stringify(dataWithSeconds, null, 2));
-    console.log(`JSON data saved to ${outputFile}`);
-
-    // Save CSV
-    const csvFile = getCsvFilePath(outputFile);
-    await exportToCsv(measurements, csvFile);
-  }
+  await createAndSaveToFiles(dataWithSeconds, filename);
 
   return measurements;
 }
@@ -396,10 +312,10 @@ export async function profileSwitchingToSameChannels(
 export async function profileScrollingInChannel(
   page: Page,
   channelId: string,
-  scrollCount: number, // Number of scroll actions
-  scrollStep: number, // Pixels to scroll each time
-  pauseBetweenScrolls: number, // Time to wait after each scroll (ms)
-  outputFile?: string,
+  scrollCount: number,
+  scrollStep: number,
+  pauseBetweenScrolls: number,
+  filename: string,
 ): Promise<ScrollMemoryMetrics[]> {
   const measurements: ScrollMemoryMetrics[] = [];
 
@@ -456,6 +372,7 @@ export async function profileScrollingInChannel(
 
     // Take memory measurement
     const metrics = await measureMemoryUsage(page);
+
     measurements.push({
       ...metrics,
       diffTimestamp: metrics.timestamp - startTimestamp,
@@ -469,19 +386,10 @@ export async function profileScrollingInChannel(
     `\nCompleted scrolling test with ${measurements.length} measurements`,
   );
 
-  // Save to file if specified
-  if (outputFile) {
-    // Convert timestamps to include seconds
-    const dataWithSeconds = convertTimestampsToSeconds(measurements);
+  // Convert timestamps to include seconds
+  const dataWithSeconds = convertTimestampsToSeconds(measurements);
 
-    // Save JSON
-    await fs.writeFile(outputFile, JSON.stringify(dataWithSeconds, null, 2));
-    console.log(`JSON data saved to ${outputFile}`);
-
-    // Save CSV
-    const csvFile = getCsvFilePath(outputFile);
-    await exportToCsv(measurements, csvFile);
-  }
+  await createAndSaveToFiles(dataWithSeconds, filename);
 
   return measurements;
 }
