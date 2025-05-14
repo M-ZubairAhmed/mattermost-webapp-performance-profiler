@@ -102,3 +102,20 @@ export async function createAndSaveToFiles<T extends Record<string, any>>(
     console.error('Error saving data to files:', error);
   }
 }
+
+/**
+ * Utility function to convert milliseconds to seconds
+ * Creates a copy of the data with timestamp and diffTimestamp in seconds
+ */
+export function convertTimestampsToSeconds(
+  measurements: any[],
+): any[] {
+  return measurements.map((m) => ({
+    ...m,
+    timestamp_sec: parseFloat((m.timestamp / 1000).toFixed(3)),
+    diffTimestamp_sec:
+      m.diffTimestamp !== undefined
+        ? parseFloat((m.diffTimestamp / 1000).toFixed(3))
+        : undefined,
+  }));
+}
