@@ -27,6 +27,20 @@ function createFilePath(filename: string, extension: string = ''): string {
 }
 
 /**
+ * Ensure results directory exists
+ */
+async function ensureResultsDirectory(): Promise<string> {
+  const resultsDir = path.join(process.cwd(), 'results');
+  try {
+    await fs.mkdir(resultsDir, {recursive: true});
+    return resultsDir;
+  } catch (err) {
+    console.error('Error creating results directory:', err);
+    throw err;
+  }
+}
+
+/**
  * Save data to JSON file
  * Creates the directory if it doesn't exist
  */
@@ -35,16 +49,38 @@ async function saveToJson<T>(data: T, filename: string): Promise<string> {
   const outputFile = createFilePath(filename, '.json');
 
   // Create results directory if it doesn't exist
-  const resultsDir = path.join(process.cwd(), 'results');
-  try {
-    await fs.mkdir(resultsDir, {recursive: true});
-  } catch (err) {}
+  await ensureResultsDirectory();
+
+  // Check if data exists
+  if (!data) {
+    console.error('No data provided to save to JSON');
+    throw new Error('No data provided to save to JSON');
+  }
 
   // Save JSON
-  await fs.writeFile(outputFile, JSON.stringify(data, null, 2));
-  console.log(`JSON data saved to ${outputFile}`);
+  const jsonString = JSON.stringify(data, null, 2);
+  if (!jsonString) {
+    console.error('Failed to stringify data');
+    throw new Error('Failed to stringify data');
+  }
 
-  return outputFile;
+  try {
+    await fs.writeFile(outputFile, jsonString);
+    return outputFile;
+  } catch (error) {
+    console.error(`Error writing to ${outputFile}:`, error);
+
+    // Create a backup with timestamp in case of file system issues
+    const backupFile = `${outputFile}.backup-${Date.now()}.json`;
+    try {
+      await fs.writeFile(backupFile, jsonString);
+      console.log(`Backup JSON saved to ${backupFile}`);
+    } catch (backupError) {
+      console.error(`Failed to save backup JSON:`, backupError);
+    }
+
+    throw error;
+  }
 }
 
 /**
@@ -53,53 +89,104 @@ async function saveToJson<T>(data: T, filename: string): Promise<string> {
  *
  * @param data Array of objects with the same structure
  * @param filename Filename without path (e.g., "memory_test")
+ * @param silent Whether to suppress log messages
  */
 async function saveToCsv<T extends Record<string, any>>(
   data: T[],
   filename: string,
+  silent: boolean = false,
 ): Promise<string> {
   const outputFile = createFilePath(filename, '.csv');
 
   // Create results directory if it doesn't exist
-  const resultsDir = path.join(process.cwd(), 'results');
+  await ensureResultsDirectory();
+
+  // Check if data exists and is not empty
+  if (!data || !Array.isArray(data) || data.length === 0) {
+    console.error(
+      `No data or empty array provided to save to CSV: ${filename}`,
+    );
+    // Create an empty file with a warning
+    const errorMsg = `# WARNING: No data was available to save at ${new Date().toISOString()}\n`;
+    await fs.writeFile(outputFile, errorMsg);
+    return outputFile;
+  }
+
+  // Get headers from the first item
+  const csvHeaders = Object.keys(data[0]);
+  if (csvHeaders.length === 0) {
+    console.error('Invalid data structure: empty object in data array');
+    throw new Error('Invalid data structure: empty object in data array');
+  }
+
   try {
-    await fs.mkdir(resultsDir, {recursive: true});
-  } catch (err) {}
+    // Create header row
+    const headerRow = csvHeaders.join(',');
 
-  const csvHeaders = data.length > 0 ? Object.keys(data[0]) : [];
+    // Create data rows
+    const dataRows = data.map((item) =>
+      csvHeaders
+        .map((header) => {
+          const value = item[header];
+          // Wrap strings in quotes, handle undefined
+          return typeof value === 'string' ? `"${value}"` : (value ?? '');
+        })
+        .join(','),
+    );
 
-  // Create header row
-  const headerRow = csvHeaders.join(',');
+    // Combine headers and data
+    const csvContent = [headerRow, ...dataRows].join('\n');
 
-  // Create data rows
-  const dataRows = data.map((item) =>
-    csvHeaders
-      .map((header) => {
-        const value = item[header];
-        // Wrap strings in quotes, handle undefined
-        return typeof value === 'string' ? `"${value}"` : (value ?? '');
-      })
-      .join(','),
-  );
+    // Write to file
+    await fs.writeFile(outputFile, csvContent);
 
-  // Combine headers and data
-  const csvContent = [headerRow, ...dataRows].join('\n');
+    return outputFile;
+  } catch (error) {
+    console.error(`Error writing CSV to ${outputFile}:`, error);
 
-  // Write to file
-  await fs.writeFile(outputFile, csvContent);
-  console.log(`CSV data saved to ${outputFile}`);
+    // Create an emergency JSON backup
+    const backupFile = `${outputFile.replace('.csv', '')}.emergency-${Date.now()}.json`;
+    try {
+      await fs.writeFile(backupFile, JSON.stringify(data, null, 2));
+      console.log(`Emergency JSON backup saved to ${backupFile}`);
+    } catch (backupError) {
+      console.error(`Failed to save emergency backup:`, backupError);
+    }
 
-  return outputFile;
+    throw error;
+  }
 }
 
 export async function createAndSaveToFiles<T extends Record<string, any>>(
   data: T[],
   filename: string,
+  format: 'json' | 'csv' = 'csv',
 ) {
   try {
-    await Promise.all([saveToJson(data, filename), saveToCsv(data, filename)]);
+    if (!data || data.length === 0) {
+      console.warn(`Warning: Empty or null data when saving ${filename}`);
+    }
+
+    if (format === 'json') {
+      await saveToJson(data, filename);
+    } else if (format === 'csv') {
+      await saveToCsv(data, filename);
+    }
   } catch (error) {
     console.error('Error saving data to files:', error);
+
+    // Last resort emergency save
+    try {
+      const emergencyFile = path.join(
+        process.cwd(),
+        'results',
+        `emergency-${filename}-${Date.now()}.json`,
+      );
+      await fs.writeFile(emergencyFile, JSON.stringify(data || [], null, 2));
+      console.log(`Emergency data saved to ${emergencyFile}`);
+    } catch (emergencyError) {
+      console.error('CRITICAL: Even emergency save failed:', emergencyError);
+    }
   }
 }
 
@@ -107,9 +194,7 @@ export async function createAndSaveToFiles<T extends Record<string, any>>(
  * Utility function to convert milliseconds to seconds
  * Creates a copy of the data with timestamp and diffTimestamp in seconds
  */
-export function convertTimestampsToSeconds(
-  measurements: any[],
-): any[] {
+export function convertTimestampsToSeconds(measurements: any[]): any[] {
   return measurements.map((m) => ({
     ...m,
     timestamp_sec: parseFloat((m.timestamp / 1000).toFixed(3)),

@@ -26,8 +26,6 @@ export async function measureMemoryUsage(page: Page): Promise<MemoryMetrics> {
   // Convert to MB
   const heapTotalMB = parseFloat((heapTotal / 1024 / 1024).toFixed(2));
 
-  console.log(`JS Heap Total: ${heapTotalMB} MB`);
-
   return {heapTotalMB, timestamp: Date.now()};
 }
 
@@ -64,6 +62,3 @@ export async function measureMemoryUsagePeriodically(
 
   return measurements;
 }
-
-
-

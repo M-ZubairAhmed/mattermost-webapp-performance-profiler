@@ -38,4 +38,6 @@ export async function forceGarbageCollection(page: Page): Promise<void> {
   });
 
   console.log('Forced garbage collection');
+
+  await new Promise((resolve) => setTimeout(resolve, 2000));
 }

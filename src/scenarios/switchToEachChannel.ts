@@ -3,22 +3,28 @@ import {MemoryMetrics, measureMemoryUsage} from '../measurers/memory';
 import {createAndSaveToFiles} from '../measurers/toFile';
 import {forceGarbageCollection} from '../measurers/garbageCollector';
 import {convertTimestampsToSeconds} from '../measurers/toFile';
+import {FrameRateMeasurer} from '../measurers/frameRate';
 
 export async function profileSwitchingToEachChannel(
   page: Page,
-  filename: string,
+  startTime: Date,
+  timestamp: string,
+  waitAfterEachSwitch: number = 2000,
 ): Promise<MemoryMetrics[]> {
   const measurements: MemoryMetrics[] = [];
 
-  // Run an initial garbage collection to start with a clean state
-  console.log(
-    'Running initial garbage collection before channel switching test...',
-  );
   await forceGarbageCollection(page);
-  await new Promise((resolve) => setTimeout(resolve, 2000));
-  console.log('Initial garbage collection completed');
 
-  const startTimestamp = Date.now(); // Record start time after GC
+  const frameRateMeasurer = new FrameRateMeasurer(
+    page,
+    `switch-each-channel-framerate-${timestamp}`,
+  );
+  await frameRateMeasurer.start();
+
+  console.log('Started switching to each channel');
+  console.log(
+    `Configuration: ${waitAfterEachSwitch}ms delay`,
+  );
 
   // Wait for sidebar container to appear
   await page.waitForSelector('#sidebar-left');
@@ -53,13 +59,13 @@ export async function profileSwitchingToEachChannel(
     }, channel.id);
 
     // Wait for content to load and stabilize
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await new Promise((resolve) => setTimeout(resolve, waitAfterEachSwitch));
 
     // Take memory measurement
     const metrics = await measureMemoryUsage(page);
 
     // Calculate diffTimestamp from start time
-    metrics.diffTimestamp = metrics.timestamp - startTimestamp;
+    metrics.diffTimestamp = metrics.timestamp - startTime.getTime();
 
     // Add channel name to metrics
     const metricsWithChannel = {
@@ -71,10 +77,15 @@ export async function profileSwitchingToEachChannel(
     measurements.push(metricsWithChannel);
   }
 
+  await frameRateMeasurer.stop();
+
   // Convert timestamps to include seconds
   const dataWithSeconds = convertTimestampsToSeconds(measurements);
 
-  await createAndSaveToFiles(dataWithSeconds, filename);
+  await createAndSaveToFiles(
+    dataWithSeconds,
+    `switch-each-channel-memory-profile-${timestamp}`,
+  );
 
   return measurements;
 }
