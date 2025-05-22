@@ -22,9 +22,7 @@ export async function profileSwitchingToEachChannel(
   await frameRateMeasurer.start();
 
   console.log('Started switching to each channel');
-  console.log(
-    `Configuration: ${waitAfterEachSwitch}ms delay`,
-  );
+  console.log(`Configuration: ${waitAfterEachSwitch}ms delay`);
 
   // Wait for sidebar container to appear
   await page.waitForSelector('#sidebar-left');

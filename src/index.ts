@@ -129,7 +129,6 @@ async function main(): Promise<void> {
       try {
         switch (testType) {
           case 'scroll-two-channels':
-            console.log('Running scroll-two-channels test...');
             await profileScrollingInTwoChannels(
               page,
               startTime,
@@ -141,7 +140,6 @@ async function main(): Promise<void> {
             break;
             
           case 'switch-each-channel':
-            console.log('Running switch-each-channel test...');
             await profileSwitchingToEachChannel(
               page,
               startTime,
