@@ -165,32 +165,9 @@ export class FrameRateMeasurer {
       const count = currentData.length;
       if (count > 0) {
         this.measurements = [...this.measurements, ...currentData];
-
-        // Save intermediate results periodically
-        if (
-          this.measurements.length > 0 &&
-          this.measurements.length % 50 === 0
-        ) {
-          await this.saveIntermediate();
-        }
       }
     } catch (err) {
       console.error('Error retrieving frame measurements:', err);
-    }
-  }
-
-  /**
-   * Saves intermediate results to avoid data loss
-   */
-  private async saveIntermediate(): Promise<void> {
-    if (this.measurements.length === 0) return;
-
-    const tmpFilename = `${this.filename}-intermediate`;
-
-    try {
-      await createAndSaveToFiles(this.measurements, tmpFilename);
-    } catch (err) {
-      console.error('Error saving intermediate results:', err);
     }
   }
 
